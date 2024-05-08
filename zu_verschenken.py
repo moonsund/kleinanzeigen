@@ -1,24 +1,42 @@
 #!/usr/bin/python3
 
+import logging
 import os
 import re
 import time
-import logging
 import random
 import requests
 from datetime import datetime, timedelta
 
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 
+load_dotenv()
 
-URL = 'https://www.kleinanzeigen.de/s-zu-verschenken/friedrichshain-kreuzberg/c192l26918'
+URL = os.getenv('URL')
 HOST = 'https://www.kleinanzeigen.de'
-EXCLUSIONS = ('matratze', 'waschmaschine', 'kühlschrank', 'mattress')
+EXCLUSIONS = os.getenv('EXCLUSIONS').split(', ')
 
+PARAM_NAMES = {'URL', 'HOST'}
 
 class ResponseError(Exception):
     """Exception raised when response status code is not 200."""
     pass
+
+
+def check_params():
+    logging.info('Parameters verification')
+    missing_tokens = [
+        name for name in PARAM_NAMES if globals()[name] is None
+    ]
+    if missing_tokens:
+        logging.critical(
+            f'One or few params are missing: {missing_tokens}.'
+        )
+        raise ValueError(
+            f'One or few params are missing: {missing_tokens}.'
+        )
+    logging.info('Parameters have been verified')
 
 
 def get_response(url):
@@ -97,7 +115,8 @@ def notify(title, message, link, sound):
 
 
 def main():
-    logging.info('Start')
+    check_params()
+    logging.info('Start scrapping')
     timestamp = datetime.now()
 
     while True:
