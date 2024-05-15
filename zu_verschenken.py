@@ -15,9 +15,26 @@ load_dotenv()
 
 URL = os.getenv('URL')
 HOST = 'https://www.kleinanzeigen.de'
-EXCLUSIONS = os.getenv('EXCLUSIONS').split(', ')
+EXCLUSIONS = os.getenv('EXCLUSIONS').lower().split(', ')
+OLD_ADS = []
 
 PARAM_NAMES = {'URL', 'HOST'}
+
+
+class Ad:
+    def __init__(self, title, pub_time, link):
+        self.title = title
+        self.pub_time = pub_time
+        self.link = HOST + link
+
+    def __eq__(self, other):
+        if isinstance(other, Ad):
+            return (self.title == other.title) and (self.pub_time == other.pub_time) and (self.link == other.link)
+        return False
+
+    def __hash__(self):
+        return hash((self.title, self.pub_time, self.link))
+
 
 class ResponseError(Exception):
     """Exception raised when response status code is not 200."""
@@ -58,7 +75,8 @@ def get_response(url):
     return response
 
 
-def parse_response(response, timestamp):
+def get_ads(response):
+    ads = []
     logging.debug('Starting parsing')
     articles = re.findall('<article(.*?)</article', response.text, re.S)
     if not articles:
@@ -71,38 +89,29 @@ def parse_response(response, timestamp):
             continue  # Skip non-ad blocks
 
         soup = BeautifulSoup(article, 'html.parser')
-        ad_time = soup.find('div', attrs={'class': 'aditem-main--top--right'}).text.strip()
         ad_title = soup.find('a', attrs={'class': 'ellipsis'}).text.strip()
+        ad_pub_time = soup.find('div', attrs={'class': 'aditem-main--top--right'}).text.strip()
         ad_link = soup.find('a', {'class': 'ellipsis'})['href']
-        missing_info = [
-            param for param in (ad_time, ad_title, ad_link) if param is None
+        missing_values = [
+            value for value in (ad_title, ad_pub_time, ad_link) if value is None
         ]
-        if missing_info:
+        if missing_values:
             logging.critical(
-                f'One or few ad params is missing: {missing_info}'
+                f'One or few ad params is missing: {missing_values}'
             )
             raise ValueError(
-                f'One or few ad params is missing: {missing_info}'
+                f'One or few ad params is missing: {missing_values}'
             )
+
+        if any(word in ad_title.lower() for word in EXCLUSIONS):
+            continue
+
+        if 'Heute,' in ad_pub_time:
+            ad_pub_time = ad_pub_time.replace('Heute,', str(datetime.today().date()))
         else:
-            logging.debug(f'Last ad: "{ad_title}", {ad_time}')
-            break
-
-    if 'Heute,' in ad_time:
-        add_time = ad_time.replace('Heute,', str(datetime.today().date()))
-    else:
-        add_time = ad_time.replace('Gestern,', str(datetime.today().date() - timedelta(days=1)))
-    add_time = datetime.strptime(add_time, "%Y-%m-%d %H:%M")
-    time_delta = add_time.timestamp() - timestamp.timestamp()
-
-    if any(word in ad_title.lower() for word in EXCLUSIONS):
-        return False
-
-    if time_delta <= 0:
-        logging.info('No new ads')
-        return False
-    logging.info('New ad has been published')
-    return add_time.strftime("%Y-%m-%d %H:%M:%S"), ad_title, ad_link
+            ad_pub_time = ad_pub_time.replace('Gestern,', str(datetime.today().date() - timedelta(days=1)))
+        ads.append(Ad(title=ad_title, pub_time=ad_pub_time, link=ad_link))
+    return ads
 
 
 def notify(title, message, link, sound):
@@ -111,28 +120,40 @@ def notify(title, message, link, sound):
     message = '-message {!r}'.format(message)
     link = '-open {!r}'.format(link)
     sound = '-sound {!r}'.format(sound)
-    os.system('terminal-notifier {}'.format(' '.join([message, title, link, sound])))
+    os.system('terminal-notifier {}'.format(' '.join([title, message, link, sound])))
 
 
 def main():
     check_params()
     logging.info('Start scrapping')
-    timestamp = datetime.now()
 
     while True:
         try:
             response = get_response(URL)
-            new_adds = parse_response(response, timestamp)
-            if not new_adds:
+            ads = get_ads(response)
+            if not OLD_ADS:
+                for ad in ads:
+                    logging.debug(f'ad titles: {ad.title}')
+                OLD_ADS.extend(ads)
                 continue
-            timestamp = datetime.now()
-            add_time, add_title, add_link = new_adds
-            notify(
-                title=add_title,
-                message=add_time,
-                link=HOST+add_link,
-                sound='Sonar')
-            logging.info('Notification has been sent')
+            logging.debug(f'OLD_ADS: {len(OLD_ADS)}')
+            logging.debug(f'ads: {len(ads)}')
+            new_ads = list(set(ads).difference(set(OLD_ADS)))
+            logging.debug(f'new_ads: {len(new_ads)}')
+            if not new_ads:
+                logging.info('No new ads')
+                continue
+            else:
+                for new_ad in new_ads:
+                    logging.debug(f'new_ad.title: {new_ad.title}')
+                    logging.debug(f'new_ad.time: {new_ad.pub_time}')
+                    notify(
+                        title=new_ad.title,
+                        message=new_ad.pub_time,
+                        link=new_ad.link,
+                        sound='Sonar')
+                    logging.info('Notification has been sent')
+                    OLD_ADS.append(new_ad)
         except Exception as error:
             logging.exception(f'{error}')
         finally:
