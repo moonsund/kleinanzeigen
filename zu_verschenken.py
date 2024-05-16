@@ -132,8 +132,6 @@ def main():
             response = get_response(URL)
             ads = get_ads(response)
             if not OLD_ADS:
-                for ad in ads:
-                    logging.debug(f'ad titles: {ad.title}')
                 OLD_ADS.extend(ads)
                 continue
             logging.debug(f'OLD_ADS: {len(OLD_ADS)}')

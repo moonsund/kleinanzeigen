@@ -1,4 +1,4 @@
-# kleinanzeigen.de notifier (last updated 08.05.24)
+# kleinanzeigen.de notifier
 
 A Python script that monitors the appearance of new ads in a specified section on www.kleinanzeigen.de.
 
