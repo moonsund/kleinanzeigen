@@ -17,6 +17,19 @@ URL = os.getenv('URL')
 HOST = 'https://www.kleinanzeigen.de'
 EXCLUSIONS = os.getenv('EXCLUSIONS').lower().split(', ')
 OLD_ADS = []
+AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.141 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:84.0) Gecko/20100101 Firefox/84.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.2 Safari/605.1.15',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.141 Safari/537.36',
+    'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:84.0) Gecko/20100101 Firefox/84.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.96 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 11_1_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.96 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64; rv:84.0) Gecko/20100101 Firefox/84.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'
+    ]
 
 PARAM_NAMES = {'URL', 'HOST'}
 
@@ -75,6 +88,13 @@ def get_response(url):
     return response
 
 
+def is_one_hour_old(date_str):
+    date_obj = datetime.strptime(date_str, '%Y-%m-%d %H:%M')
+    current_time = datetime.now()
+    time_difference = current_time - date_obj
+    return time_difference >= timedelta(hours=1)
+
+
 def get_ads(response):
     ads = []
     logging.debug('Starting parsing')
@@ -110,6 +130,10 @@ def get_ads(response):
             ad_pub_time = ad_pub_time.replace('Heute,', str(datetime.today().date()))
         else:
             ad_pub_time = ad_pub_time.replace('Gestern,', str(datetime.today().date() - timedelta(days=1)))
+
+        if is_one_hour_old(ad_pub_time):
+            continue
+
         ads.append(Ad(title=ad_title, pub_time=ad_pub_time, link=ad_link))
     return ads
 
@@ -133,6 +157,7 @@ def main():
             ads = get_ads(response)
             if not OLD_ADS:
                 OLD_ADS.extend(ads)
+                logging.info('OLD_ADS updated')
                 continue
             logging.debug(f'OLD_ADS: {len(OLD_ADS)}')
             logging.debug(f'ads: {len(ads)}')
